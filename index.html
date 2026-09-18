@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Burbujas en el Aro: Desafío de Soplo</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-1">
+
+  <div id="ui">
+    <div class="panel">
+      <h2 id="level-display">Nivel 1 ⭐</h2>
+      <p id="objective-text">Empuja la burbuja soplando para meterla en su aro</p>
+    </div>
+
+    <div class="panel">
+      <p id="progress-display">Burbujas encestadas: <span id="cleared-count">0</span> / <span id="total-count">1</span></p>
+    </div>
+  </div>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="hud-controls">
+    <div id="blow-meter-container">
+      <div id="blow-meter"></div>
+    </div>
+    <p id="feedback">Sopla suave para mover la burbuja</p>
+  </div>
+
+  <div id="welcome-modal">
+    <div class="modal-card">
+      <h1>🫧 Burbujas & Aros</h1>
+      <p class="subtitle">Soplo de Precisión</p>
+      <div class="instructions">
+        <p>🎯 <strong>Objetivo:</strong> Controla la fuerza de tu soplo frente al micrófono para elevar las burbujas e introducirlas en sus aros.</p>
+        <p>🫧 Las burbujas grandes pesan más y requieren un soplo más constante.</p>
+      </div>
+      <button id="start-btn">🎙️ Permitir Micrófono y Jugar</button>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
