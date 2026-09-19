@@ -17,9 +17,9 @@ const MAX_LEVELS = 10;
 let levelFailures = 0;
 
 const SIZE_MAP = {
-  S: { radius: 22, weight: 0.12 },
-  M: { radius: 32, weight: 0.22 },
-  L: { radius: 44, weight: 0.35 }
+  S: { radius: 22, weight: 0.05 },
+  M: { radius: 32, weight: 0.07 },
+  L: { radius: 44, weight: 0.09 }
 };
 
 let bubbles = [];
@@ -36,6 +36,15 @@ window.addEventListener("deviceorientation", (event) => {
   if (event.gamma !== null) {
     tiltGamma = Math.max(-45, Math.min(45, event.gamma));
   }
+});
+
+// Control alternativo con teclado para PC / Laptops
+window.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowLeft") tiltGamma = -30;
+  if (event.key === "ArrowRight") tiltGamma = 30;
+});
+window.addEventListener("keyup", (event) => {
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") tiltGamma = 0;
 });
 
 function triggerUINotice(duration = 2500) {
@@ -56,8 +65,11 @@ class Ring {
     this.radius = SIZE_MAP[type].radius + 12;
     this.isCleared = false;
 
-    this.vx = (Math.random() - 0.5) * 1.8;
-    this.vy = (Math.random() - 0.5) * 1.2;
+    // Velocidad incrementada para que no se sientan tan lentos (rango ~2.5 a 3.5)
+    const speedX = (Math.random() > 0.5 ? 1 : -1) * (Math.random() * 1.5 + 2.0);
+    const speedY = (Math.random() > 0.5 ? 1 : -1) * (Math.random() * 1.2 + 1.5);
+    this.vx = speedX;
+    this.vy = speedY;
   }
 
   update() {
@@ -94,7 +106,6 @@ class Ring {
   }
 }
 
-// FUNCIÓN DE CHOQUE Y REBOTE ENTRE AROS
 function resolveRingCollisions() {
   for (let i = 0; i < rings.length; i++) {
     for (let j = i + 1; j < rings.length; j++) {
@@ -106,9 +117,7 @@ function resolveRingCollisions() {
       const distance = Math.sqrt(dx * dx + dy * dy);
       const minDistance = ringA.radius + ringB.radius;
 
-      // Si colisionan los dos aros
       if (distance < minDistance) {
-        // 1. Separar aros para evitar solapamiento pegajoso
         const overlap = minDistance - distance;
         const nx = dx / (distance || 1);
         const ny = dy / (distance || 1);
@@ -118,7 +127,6 @@ function resolveRingCollisions() {
         ringB.x += nx * (overlap / 2);
         ringB.y += ny * (overlap / 2);
 
-        // 2. Invertir y repeler las velocidades
         const tempVx = ringA.vx;
         const tempVy = ringA.vy;
 
@@ -150,14 +158,14 @@ class Bubble {
 
     const tiltForce = (tiltGamma / 45) * 0.4;
     this.vx += tiltForce;
-    this.vy += 0.07;
+    this.vy += 0.04;
 
-    if (blowForce > 0.12) {
-      this.vy -= (blowForce * 0.45) / (this.weight * 3);
+    if (blowForce > 0.05) {
+      this.vy -= (blowForce * 0.8) / (this.weight * 10);
     }
 
     this.vx *= 0.94;
-    this.vy *= 0.97;
+    this.vy *= 0.96;
 
     this.x += this.vx;
     this.y += this.vy;
@@ -173,7 +181,7 @@ class Bubble {
 
     if (this.y + this.radius > canvas.height - 50) {
       this.y = canvas.height - 50 - this.radius;
-      this.vy = -this.vy * 0.4;
+      this.vy = -this.vy * 0.3;
     }
 
     if (this.y - this.radius <= 0) {
@@ -264,16 +272,22 @@ function initLevel() {
 
   const types = ["S", "M", "L"];
 
+  // 1. Crear burbujas
   for (let i = 0; i < currentLevel; i++) {
+    const randomType = types[Math.floor(Math.random() * types.length)];
+    const bubbleX = (canvas.width / (currentLevel + 1)) * (i + 1);
+    const bubbleY = canvas.height - 90;
+    bubbles.push(new Bubble(bubbleX, bubbleY, randomType));
+  }
+
+  // 2. Crear aros (Cantidad de aros = Cantidad de burbujas + 1)
+  const ringCount = currentLevel + 1;
+  for (let i = 0; i < ringCount; i++) {
     const randomType = types[Math.floor(Math.random() * types.length)];
     const ringX = Math.random() * (canvas.width - 160) + 80;
     const ringY = Math.random() * (canvas.height * 0.45) + 80;
 
     rings.push(new Ring(ringX, ringY, randomType));
-
-    const bubbleX = (canvas.width / (currentLevel + 1)) * (i + 1);
-    const bubbleY = canvas.height - 90;
-    bubbles.push(new Bubble(bubbleX, bubbleY, randomType));
   }
 
   updateUI();
@@ -301,6 +315,11 @@ document.getElementById("start-btn").addEventListener("click", async () => {
     });
 
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
+
     analyser = audioContext.createAnalyser();
     analyser.fftSize = 512;
 
@@ -319,19 +338,21 @@ function detectBlowing() {
   const dataArray = new Uint8Array(analyser.frequencyBinCount);
   analyser.getByteFrequencyData(dataArray);
 
-  let sum = 0;
-  const startIndex = Math.floor(dataArray.length * 0.15);
-  const endIndex = Math.floor(dataArray.length * 0.65);
+  const startIndex = Math.floor(dataArray.length * 0.05);
+  const endIndex = Math.floor(dataArray.length * 0.25);
 
-  for (let i = startIndex; i < endIndex; i++) sum += dataArray[i];
+  let sum = 0;
+  for (let i = startIndex; i < endIndex; i++) {
+    sum += dataArray[i];
+  }
 
   let average = sum / (endIndex - startIndex);
   let normalized = average / 255;
 
-  const NOISE_THRESHOLD = 0.20;
+  const NOISE_THRESHOLD = 0.22;
   if (normalized < NOISE_THRESHOLD) return 0;
 
-  return Math.min((normalized - NOISE_THRESHOLD) / (1 - NOISE_THRESHOLD) * 2.0, 1);
+  return Math.min((normalized - NOISE_THRESHOLD) / (1 - NOISE_THRESHOLD) * 1.8, 1);
 }
 
 function createBurstEffect(x, y) {
@@ -386,15 +407,12 @@ function animate() {
   const blowIntensity = detectBlowing();
   document.getElementById("blow-meter").style.width = `${blowIntensity * 100}%`;
 
-  // Mover aros
   rings.forEach(ring => {
     ring.update();
   });
 
-  // Resolver choques entre los aros para que se repelan
   resolveRingCollisions();
 
-  // Dibujar aros actualizados
   rings.forEach(ring => {
     ring.draw();
   });
