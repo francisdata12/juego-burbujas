@@ -17,16 +17,15 @@ const MAX_LEVELS = 10;
 let levelFailures = 0;
 
 const SIZE_MAP = {
-  S: { radius: 22, weight: 0.05 },
-  M: { radius: 32, weight: 0.07 },
-  L: { radius: 44, weight: 0.09 }
+  S: { radius: 24, weight: 0.05 },
+  M: { radius: 34, weight: 0.07 },
+  L: { radius: 46, weight: 0.09 }
 };
 
 let bubbles = [];
 let rings = [];
 let particles = [];
 let clearedInLevel = 0;
-let audioContext, analyser, microphone;
 let isTransitioning = false;
 let uiTimeout = null;
 
@@ -38,7 +37,6 @@ window.addEventListener("deviceorientation", (event) => {
   }
 });
 
-// Control alternativo con teclado para PC / Laptops
 window.addEventListener("keydown", (event) => {
   if (event.key === "ArrowLeft") tiltGamma = -30;
   if (event.key === "ArrowRight") tiltGamma = 30;
@@ -47,8 +45,12 @@ window.addEventListener("keyup", (event) => {
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") tiltGamma = 0;
 });
 
+let touchStartPos = null;
+let activeBubble = null;
+
 function triggerUINotice(duration = 2500) {
   const ui = document.getElementById("ui");
+  if (!ui) return;
   ui.classList.add("show");
 
   if (uiTimeout) clearTimeout(uiTimeout);
@@ -58,14 +60,15 @@ function triggerUINotice(duration = 2500) {
 }
 
 class Ring {
-  constructor(x, y, type) {
+  constructor(x, y, type, requiredCount = 1) {
     this.x = x;
     this.y = y;
     this.type = type;
-    this.radius = SIZE_MAP[type].radius + 12;
+    this.radius = SIZE_MAP[type].radius + 14;
+    this.requiredCount = requiredCount; // Cuántas burbujas de este tipo debe recibir
+    this.currentCount = 0;              // Cuántas han entrado
     this.isCleared = false;
 
-    // Velocidad incrementada para que no se sientan tan lentos (rango ~2.5 a 3.5)
     const speedX = (Math.random() > 0.5 ? 1 : -1) * (Math.random() * 1.5 + 2.0);
     const speedY = (Math.random() > 0.5 ? 1 : -1) * (Math.random() * 1.2 + 1.5);
     this.vx = speedX;
@@ -93,7 +96,15 @@ class Ring {
     ctx.beginPath();
     ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
     ctx.lineWidth = 5;
-    ctx.strokeStyle = this.isCleared ? "#00ff87" : "rgba(255, 215, 0, 0.85)";
+
+    // Cambia de color según el progreso del aro
+    if (this.isCleared) {
+      ctx.strokeStyle = "#00ff87"; // Verde completo
+    } else if (this.currentCount > 0) {
+      ctx.strokeStyle = "#00d2ff"; // Azul verdoso brillante (progreso parcial)
+    } else {
+      ctx.strokeStyle = "rgba(255, 215, 0, 0.85)"; // Dorado inicial
+    }
     ctx.stroke();
 
     ctx.beginPath();
@@ -146,42 +157,37 @@ class Bubble {
     this.y = y;
     this.type = type;
     this.radius = SIZE_MAP[type].radius;
-    this.weight = SIZE_MAP[type].weight;
 
     this.vx = 0;
     this.vy = 0;
     this.isPopped = false;
   }
 
-  update(blowForce) {
+  update() {
     if (this.isPopped) return;
 
-    const tiltForce = (tiltGamma / 45) * 0.4;
+    const tiltForce = (tiltGamma / 45) * 0.15;
     this.vx += tiltForce;
-    this.vy += 0.04;
+    this.vy += 0.03; 
 
-    if (blowForce > 0.05) {
-      this.vy -= (blowForce * 0.8) / (this.weight * 10);
-    }
-
-    this.vx *= 0.94;
-    this.vy *= 0.96;
+    this.vx *= 0.98;
+    this.vy *= 0.98;
 
     this.x += this.vx;
     this.y += this.vy;
 
     if (this.x - this.radius < 0) {
       this.x = this.radius;
-      this.vx *= -0.6;
+      this.vx *= -0.7;
     }
     if (this.x + this.radius > canvas.width) {
       this.x = canvas.width - this.radius;
-      this.vx *= -0.6;
+      this.vx *= -0.7;
     }
 
-    if (this.y + this.radius > canvas.height - 50) {
-      this.y = canvas.height - 50 - this.radius;
-      this.vy = -this.vy * 0.3;
+    if (this.y + this.radius > canvas.height - 40) {
+      this.y = canvas.height - 40 - this.radius;
+      this.vy = -this.vy * 0.4;
     }
 
     if (this.y - this.radius <= 0) {
@@ -199,15 +205,15 @@ class Bubble {
 
     ctx.beginPath();
     ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(180, 230, 255, 0.35)";
+    ctx.fillStyle = "rgba(180, 230, 255, 0.45)";
     ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
     ctx.stroke();
 
     ctx.beginPath();
     ctx.arc(-this.radius * 0.3, -this.radius * 0.3, this.radius * 0.25, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
     ctx.fill();
 
     ctx.restore();
@@ -245,7 +251,8 @@ function handlePopOverblow() {
 
   if (levelFailures > 5) {
     triggerUINotice(3500);
-    document.getElementById("level-display").innerText = "⚠️ ¡Demasiados tropiezos! Volviendo al Nivel 1...";
+    const lvlDisp = document.getElementById("level-display");
+    if (lvlDisp) lvlDisp.innerText = "⚠️ ¡Demasiados tropiezos! Volviendo al Nivel 1...";
     setTimeout(() => {
       currentLevel = 1;
       levelFailures = 0;
@@ -256,7 +263,8 @@ function handlePopOverblow() {
   }
 
   triggerUINotice(3000);
-  document.getElementById("level-display").innerText = `💥 ¡Soplo fuerte! (${levelFailures}/5 fallos)`;
+  const lvlDisp = document.getElementById("level-display");
+  if (lvlDisp) lvlDisp.innerText = `💥 ¡Tocó el techo! (${levelFailures}/5 fallos)`;
 
   setTimeout(() => {
     initLevel();
@@ -271,23 +279,31 @@ function initLevel() {
   clearedInLevel = 0;
 
   const types = ["S", "M", "L"];
+  const typeCounts = { S: 0, M: 0, L: 0 };
 
-  // 1. Crear burbujas
+  // 1. Crear burbujas y contar cuántas hay de cada tamaño
   for (let i = 0; i < currentLevel; i++) {
     const randomType = types[Math.floor(Math.random() * types.length)];
+    typeCounts[randomType]++;
+    
     const bubbleX = (canvas.width / (currentLevel + 1)) * (i + 1);
     const bubbleY = canvas.height - 90;
     bubbles.push(new Bubble(bubbleX, bubbleY, randomType));
   }
 
-  // 2. Crear aros (Cantidad de aros = Cantidad de burbujas + 1)
+  // 2. Crear aros asignando la capacidad necesaria según las burbujas activas
   const ringCount = currentLevel + 1;
+  const activeTypes = Object.keys(typeCounts).filter(t => typeCounts[t] > 0);
+
   for (let i = 0; i < ringCount; i++) {
-    const randomType = types[Math.floor(Math.random() * types.length)];
+    // Garantizamos presencia de los tipos de burbujas en pantalla
+    const ringType = activeTypes[i % activeTypes.length] || types[Math.floor(Math.random() * types.length)];
+    const neededForThisType = typeCounts[ringType] || 1;
+
     const ringX = Math.random() * (canvas.width - 160) + 80;
     const ringY = Math.random() * (canvas.height * 0.45) + 80;
 
-    rings.push(new Ring(ringX, ringY, randomType));
+    rings.push(new Ring(ringX, ringY, ringType, neededForThisType));
   }
 
   updateUI();
@@ -296,69 +312,81 @@ function initLevel() {
 
 function updateUI() {
   document.body.className = `bg-${currentLevel}`;
-  document.getElementById("level-display").innerText = `Nivel ${currentLevel} ⭐ (Fallos: ${levelFailures}/5)`;
-  document.getElementById("cleared-count").innerText = clearedInLevel;
-  document.getElementById("total-count").innerText = currentLevel;
+  const lvlDisp = document.getElementById("level-display");
+  if (lvlDisp) lvlDisp.innerText = `Nivel ${currentLevel} ⭐ (Fallos: ${levelFailures}/5)`;
+  
+  const clearedEl = document.getElementById("cleared-count");
+  if (clearedEl) clearedEl.innerText = clearedInLevel;
+  
+  const totalEl = document.getElementById("total-count");
+  if (totalEl) totalEl.innerText = currentLevel;
 }
 
-document.getElementById("start-btn").addEventListener("click", async () => {
-  try {
+const startBtn = document.getElementById("start-btn");
+if (startBtn) {
+  startBtn.addEventListener("click", async () => {
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-      const permission = await DeviceOrientationEvent.requestPermission();
-      if (permission !== 'granted') {
-        alert("Se requieren permisos de movimiento para mover la burbuja.");
-      }
+      try {
+        await DeviceOrientationEvent.requestPermission();
+      } catch (e) {}
     }
-
-    const stream = await navigator.mediaDevices.getUserMedia({ 
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } 
-    });
-
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    
-    if (audioContext.state === 'suspended') {
-      await audioContext.resume();
-    }
-
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 512;
-
-    microphone = audioContext.createMediaStreamSource(stream);
-    microphone.connect(analyser);
-
-    document.getElementById("welcome-modal").style.display = "none";
+    const modal = document.getElementById("welcome-modal");
+    if (modal) modal.style.display = "none";
     triggerUINotice(2500);
-  } catch (err) {
-    alert("Se requiere acceso al micrófono para jugar.");
+  });
+}
+
+function handleStart(x, y) {
+  for (let b of bubbles) {
+    if (b.isPopped) continue;
+    const dist = Math.hypot(x - b.x, y - b.y);
+    if (dist < b.radius + 20) {
+      activeBubble = b;
+      touchStartPos = { x, y, time: Date.now() };
+      break;
+    }
   }
+}
+
+function handleEnd(x, y) {
+  if (!activeBubble || !touchStartPos) return;
+
+  const dx = x - touchStartPos.x;
+  const dy = y - touchStartPos.y;
+  const dt = (Date.now() - touchStartPos.time) / 1000;
+
+  if (dt > 0) {
+    activeBubble.vx = (dx / dt) * 0.012;
+    activeBubble.vy = (dy / dt) * 0.012;
+  }
+
+  activeBubble = null;
+  touchStartPos = null;
+}
+
+canvas.addEventListener("touchstart", (e) => {
+  const touch = e.touches[0];
+  handleStart(touch.clientX, touch.clientY);
 });
 
-function detectBlowing() {
-  if (!analyser) return 0;
-  const dataArray = new Uint8Array(analyser.frequencyBinCount);
-  analyser.getByteFrequencyData(dataArray);
+canvas.addEventListener("touchend", (e) => {
+  const touch = e.changedTouches[0];
+  handleEnd(touch.clientX, touch.clientY);
+});
 
-  const startIndex = Math.floor(dataArray.length * 0.05);
-  const endIndex = Math.floor(dataArray.length * 0.25);
+canvas.addEventListener("mousedown", (e) => {
+  handleStart(e.clientX, e.clientY);
+});
 
-  let sum = 0;
-  for (let i = startIndex; i < endIndex; i++) {
-    sum += dataArray[i];
-  }
-
-  let average = sum / (endIndex - startIndex);
-  let normalized = average / 255;
-
-  const NOISE_THRESHOLD = 0.22;
-  if (normalized < NOISE_THRESHOLD) return 0;
-
-  return Math.min((normalized - NOISE_THRESHOLD) / (1 - NOISE_THRESHOLD) * 1.8, 1);
-}
+canvas.addEventListener("mouseup", (e) => {
+  handleEnd(e.clientX, e.clientY);
+});
 
 function createBurstEffect(x, y) {
   for (let i = 0; i < 25; i++) particles.push(new Particle(x, y));
 }
 
+// LOGICA DE COLISION MULTI-BURBUJA
 function checkCollisions() {
   if (isTransitioning) return;
 
@@ -368,16 +396,26 @@ function checkCollisions() {
 
     for (let r = 0; r < rings.length; r++) {
       const ring = rings[r];
+      
+      // Solo verificamos la coincidencia de tipo (S, M o L) y que el aro no haya alcanzado su tope máximo
       if (ring.isCleared || ring.type !== bubble.type) continue;
 
       const dx = bubble.x - ring.x;
       const dy = bubble.y - ring.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
 
-      if (distance < ring.radius - bubble.radius + 8) {
+      const captureTolerance = ring.radius * 0.8;
+
+      if (distance < captureTolerance) {
         bubble.isPopped = true;
-        ring.isCleared = true;
+        ring.currentCount++;
         clearedInLevel++;
+
+        // Si ya recibió la cantidad de burbujas requerida, el aro se completa totalmente
+        if (ring.currentCount >= ring.requiredCount) {
+          ring.isCleared = true;
+        }
+
         createBurstEffect(ring.x, ring.y);
         updateUI();
         triggerUINotice(2000);
@@ -387,7 +425,7 @@ function checkCollisions() {
           levelFailures = 0;
           setTimeout(() => {
             if (currentLevel === MAX_LEVELS) {
-              alert("🏆 ¡IMPRESIONANTE! Has completado el juego maestro.");
+              alert("🏆 ¡IMPRESIONANTE! Has completado todos los niveles.");
               currentLevel = 1;
             } else {
               currentLevel++;
@@ -396,6 +434,8 @@ function checkCollisions() {
             isTransitioning = false;
           }, 600);
         }
+        
+        break; // La burbuja explotó, pasa a la siguiente
       }
     }
   }
@@ -403,9 +443,6 @@ function checkCollisions() {
 
 function animate() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  const blowIntensity = detectBlowing();
-  document.getElementById("blow-meter").style.width = `${blowIntensity * 100}%`;
 
   rings.forEach(ring => {
     ring.update();
@@ -418,7 +455,7 @@ function animate() {
   });
 
   bubbles.forEach(bubble => {
-    bubble.update(blowIntensity);
+    bubble.update();
     bubble.draw();
   });
 
